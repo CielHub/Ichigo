@@ -26,7 +26,7 @@ from core.private_server_engine import PrivateServerEngine
 from core.watchdog_engine import WatchdogEngine
 from core.dashboard import DashboardEngine
 from core.menu import MenuEngine
-
+from core.package_manager import PackageManager
 
 class CarreraHubApplication:
 
