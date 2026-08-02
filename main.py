@@ -2,7 +2,7 @@
 """
 main.py
 CARRERA-HUB v2
-Integration Revision
+Integrated Bootstrap
 """
 
 from __future__ import annotations
@@ -35,43 +35,31 @@ from core.menu import MenuEngine
 class CarreraHubApplication:
 
     def __init__(self):
-        self.config = ConfigManager()
-        self.state = StateManager()
-        self.logger = LoggerManager()
-        self.android = AndroidService()
-        self.registry = PackageRegistry()
+        # Core
+        self.config=ConfigManager()
+        self.state=StateManager()
+        self.logger=LoggerManager()
+        self.android=AndroidService()
+        self.registry=PackageRegistry()
 
-        self.package_manager = PackageManager(
-            self.android,
-            self.registry,
-            self.config,
-            self.logger,
+        # Managers
+        self.package_manager=PackageManager(
+            self.android,self.registry,self.config,self.logger
         )
 
-        self.private_server_manager = PrivateServerManager(
-            self.config,
-            self.logger,
+        self.private_server_manager=PrivateServerManager(
+            self.config,self.logger
         )
         self.private_server_manager.load()
 
-        self.scheduler = SchedulerEngine(self.logger)
+        # Engines
+        self.scheduler=SchedulerEngine(self.logger)
 
-        self.coordinator = RuntimeCoordinator(
-            self.config,
-            self.state,
-            self.logger,
-            self.android,
-            self.registry,
+        self.verifier=VerificationEngine(
+            self.config,self.state,self.android,self.logger
         )
 
-        self.verifier = VerificationEngine(
-            self.config,
-            self.state,
-            self.android,
-            self.logger,
-        )
-
-        self.launcher = LauncherEngine(
+        self.launcher=LauncherEngine(
             self.config,
             self.state,
             self.android,
@@ -81,28 +69,11 @@ class CarreraHubApplication:
             self.verifier,
         )
 
-        self.monitor = MonitorEngine(
-            self.config,
-            self.state,
-            self.android,
-            self.logger,
-            self.registry,
+        self.recovery_scheduler=RecoveryScheduler(
+            self.config,self.state,self.logger
         )
 
-        self.detector = ErrorDetectionEngine(
-            self.config,
-            self.state,
-            self.android,
-            self.logger,
-        )
-
-        self.recovery_scheduler = RecoveryScheduler(
-            self.config,
-            self.state,
-            self.logger,
-        )
-
-        self.recovery = RecoveryEngine(
+        self.recovery=RecoveryEngine(
             self.config,
             self.state,
             self.android,
@@ -110,69 +81,107 @@ class CarreraHubApplication:
             self.launcher,
             self.verifier,
             self.recovery_scheduler,
+            self.private_server_manager,
         )
 
-        self.private_server_engine = PrivateServerEngine(
+        self.monitor=MonitorEngine(
             self.config,
             self.state,
             self.android,
             self.logger,
+            self.registry,
             self.verifier,
+            self.recovery_scheduler,
         )
 
-        self.watchdog = WatchdogEngine(
+        self.detector=ErrorDetectionEngine(
             self.config,
             self.state,
+            self.android,
             self.logger,
+            self.recovery_scheduler,
         )
 
-        self.dashboard = DashboardEngine(
+        self.watchdog=WatchdogEngine(
+            self.config,self.state,self.logger
+        )
+
+        self.dashboard=DashboardEngine(
             self.config,
             self.state,
             self.logger,
             self.recovery_scheduler,
         )
 
-        self.menu = MenuEngine(self)
+        self.private_server_engine=PrivateServerEngine(
+            self.config,self.state,self.android,self.logger,self.verifier
+        )
 
-    def register_tasks(self):
+        # Runtime
+        self.runtime=RuntimeCoordinator(
+            self.config,
+            self.state,
+            self.logger,
+            self.android,
+            self.registry,
+        )
+
+        self._register_runtime_engines()
+        self._register_scheduler_tasks()
+
+        self.menu=MenuEngine(self)
+
+    def _register_runtime_engines(self):
+        self.runtime.register_engine("scheduler", self.scheduler)
+        self.runtime.register_engine("monitor", self.monitor)
+        self.runtime.register_engine("detector", self.detector)
+        self.runtime.register_engine("recovery", self.recovery)
+        self.runtime.register_engine("watchdog", self.watchdog)
+
+    def _register_scheduler_tasks(self):
         self.scheduler.register(
             "monitor",
             self.monitor.check_all,
-            self.config.get("monitor", "interval", default=15),
+            self.config.get("monitor","interval",default=15)
         )
-        self.scheduler.register("watchdog", self.watchdog.scan, 5)
-
-    def initialize(self):
-        self.coordinator.initialize()
-        self.register_tasks()
+        self.scheduler.register(
+            "detector",
+            lambda: self.detector.scan_all(self.registry),
+            self.config.get("error_detection","interval",default=3)
+        )
+        self.scheduler.register(
+            "recovery",
+            self.recovery.recover_pending,
+            self.config.get("recovery","interval",default=2)
+        )
+        self.scheduler.register(
+            "watchdog",
+            self.watchdog.scan,
+            self.config.get("watchdog","interval",default=5)
+        )
 
     def start(self):
-        self.coordinator.start()
+        self.runtime.initialize()
         self.scheduler.start()
+        self.runtime.start()
 
     def stop(self):
+        self.runtime.stop()
         self.scheduler.stop()
-        self.coordinator.stop()
 
     def run(self):
-        self.initialize()
         self.menu.loop()
 
 
-app = CarreraHubApplication()
-
+app=CarreraHubApplication()
 
 def shutdown(*_):
-    try:
-        app.stop()
-    finally:
-        sys.exit(0)
-
+    app.stop()
+    sys.exit(0)
 
 signal.signal(signal.SIGINT, shutdown)
 signal.signal(signal.SIGTERM, shutdown)
 
-if __name__ == "__main__":
+if __name__=="__main__":
     app.run()
     
