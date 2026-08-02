@@ -1,7 +1,8 @@
+
 """
 main.py
 CARRERA-HUB v2
-Revised with Menu, PackageManager and PrivateServerManager
+Integration Revision
 """
 
 from __future__ import annotations
@@ -14,6 +15,9 @@ from core.state_manager import StateManager
 from core.logger import LoggerManager
 from core.android_service import AndroidService
 from core.package_registry import PackageRegistry
+from core.package_manager import PackageManager
+from core.private_server_manager import PrivateServerManager
+
 from core.runtime_coordinator import RuntimeCoordinator
 from core.scheduler_engine import SchedulerEngine
 from core.monitor_engine import MonitorEngine
@@ -23,8 +27,6 @@ from core.recovery_engine import RecoveryEngine
 from core.verification_engine import VerificationEngine
 from core.launcher import LauncherEngine
 from core.private_server_engine import PrivateServerEngine
-from core.private_server_manager import PrivateServerManager
-from core.package_manager import PackageManager
 from core.watchdog_engine import WatchdogEngine
 from core.dashboard import DashboardEngine
 from core.menu import MenuEngine
@@ -43,12 +45,12 @@ class CarreraHubApplication:
             self.android,
             self.registry,
             self.config,
-            self.logger
+            self.logger,
         )
 
         self.private_server_manager = PrivateServerManager(
             self.config,
-            self.logger
+            self.logger,
         )
         self.private_server_manager.load()
 
@@ -59,49 +61,76 @@ class CarreraHubApplication:
             self.state,
             self.logger,
             self.android,
-            self.registry
+            self.registry,
         )
 
         self.verifier = VerificationEngine(
-            self.config,self.state,self.android,self.logger
+            self.config,
+            self.state,
+            self.android,
+            self.logger,
         )
 
         self.launcher = LauncherEngine(
-            self.config,self.state,self.android,
-            self.logger,self.registry
+            self.config,
+            self.state,
+            self.android,
+            self.logger,
+            self.registry,
+            self.private_server_manager,
+            self.verifier,
         )
 
         self.monitor = MonitorEngine(
-            self.config,self.state,self.android,
-            self.logger,self.registry
+            self.config,
+            self.state,
+            self.android,
+            self.logger,
+            self.registry,
         )
 
         self.detector = ErrorDetectionEngine(
-            self.config,self.state,self.android,self.logger
+            self.config,
+            self.state,
+            self.android,
+            self.logger,
         )
 
         self.recovery_scheduler = RecoveryScheduler(
-            self.config,self.state,self.logger
+            self.config,
+            self.state,
+            self.logger,
         )
 
         self.recovery = RecoveryEngine(
-            self.config,self.state,self.android,
-            self.logger,self.launcher,
-            self.verifier,self.recovery_scheduler
+            self.config,
+            self.state,
+            self.android,
+            self.logger,
+            self.launcher,
+            self.verifier,
+            self.recovery_scheduler,
         )
 
-        self.private_server = PrivateServerEngine(
-            self.config,self.state,self.android,
-            self.logger,self.verifier
+        self.private_server_engine = PrivateServerEngine(
+            self.config,
+            self.state,
+            self.android,
+            self.logger,
+            self.verifier,
         )
 
         self.watchdog = WatchdogEngine(
-            self.config,self.state,self.logger
+            self.config,
+            self.state,
+            self.logger,
         )
 
         self.dashboard = DashboardEngine(
-            self.config,self.state,
-            self.logger,self.recovery_scheduler
+            self.config,
+            self.state,
+            self.logger,
+            self.recovery_scheduler,
         )
 
         self.menu = MenuEngine(self)
@@ -110,7 +139,7 @@ class CarreraHubApplication:
         self.scheduler.register(
             "monitor",
             self.monitor.check_all,
-            self.config.get("monitor","interval",default=15)
+            self.config.get("monitor", "interval", default=15),
         )
         self.scheduler.register("watchdog", self.watchdog.scan, 5)
 
@@ -133,11 +162,13 @@ class CarreraHubApplication:
 
 app = CarreraHubApplication()
 
+
 def shutdown(*_):
     try:
         app.stop()
     finally:
         sys.exit(0)
+
 
 signal.signal(signal.SIGINT, shutdown)
 signal.signal(signal.SIGTERM, shutdown)
