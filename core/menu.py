@@ -2,102 +2,91 @@
 """
 menu.py
 CARRERA-HUB v2
-Phase 3.6 - Terminal Menu
+Revised Menu Engine
 """
 
 from __future__ import annotations
-
 import os
-from dataclasses import dataclass
-from typing import Callable, Dict, Optional
-
-
-@dataclass
-class MenuItem:
-    key: str
-    title: str
-    action: Optional[Callable] = None
-
 
 class MenuEngine:
-
     def __init__(self, app=None):
-        self.app = app
-        self.running = True
-        self.items: Dict[str, MenuItem] = {}
-        self._register_defaults()
-
-    def _register_defaults(self):
-        self.register("1", "▶ Start Auto Rejoin System", self._start)
-        self.register("2", "■ Stop Runtime", self._stop)
-        self.register("3", "📊 Dashboard", self._dashboard)
-        self.register("4", "📦 Package Manager", self._package_manager)
-        self.register("5", "🔗 Private Server")
-        self.register("6", "⚙ Settings")
-        self.register("7", "🩺 Diagnostics")
-        self.register("8", "📜 Logs")
-        self.register("9", "ℹ About", self._about)
-        self.register("0", "✖ Exit", self._exit)
-
-    def register(self, key: str, title: str, action: Callable | None = None):
-        self.items[key] = MenuItem(key, title, action)
+        self.app=app
+        self.running=True
 
     def clear(self):
         os.system("clear")
 
-    def render(self):
+    def draw(self):
         self.clear()
         print("╔══════════════════════════════════════════════╗")
         print("║              CARRERA-HUB v2.0               ║")
         print("╚══════════════════════════════════════════════╝")
         print()
-        print("┌──────────────── Main Menu ────────────────┐")
-        print("│                                           │")
-        for key in sorted(self.items.keys()):
-            item = self.items[key]
-            text = f"  [{item.key}] {item.title}"
-            print(f"│ {text:<41}│")
-        print("│                                           │")
-        print("└───────────────────────────────────────────┘")
+        print(" [1] 📦 Scan Roblox Packages")
+        print(" [2] 🔗 Private Server")
+        print(" [3] ▶ Start Auto Rejoin")
+        print(" [4] 📊 Dashboard")
+        print(" [5] ⚙ Settings")
+        print(" [6] 🩺 Diagnostics")
+        print(" [7] 📜 Logs")
+        print(" [8] ℹ About")
+        print()
+        print(" [0] ✖ Exit")
         print()
 
     def loop(self):
         while self.running:
-            self.render()
-            choice = input("Select > ").strip()
-            item = self.items.get(choice)
-            if not item:
-                input("Invalid selection. Press Enter...")
-                continue
-            if item.action:
-                item.action()
-            else:
-                input("Feature not implemented yet. Press Enter...")
+            self.draw()
+            choice=input("Select > ").strip()
 
-    def _start(self):
+            if choice=="1":
+                self.scan_packages()
+            elif choice=="2":
+                self.private_server()
+            elif choice=="3":
+                self.start_runtime()
+            elif choice=="4":
+                self.dashboard()
+            elif choice=="5":
+                self.placeholder("Settings")
+            elif choice=="6":
+                self.placeholder("Diagnostics")
+            elif choice=="7":
+                self.placeholder("Logs")
+            elif choice=="8":
+                self.about()
+            elif choice=="0":
+                self.running=False
+
+    def scan_packages(self):
+        if self.app and hasattr(self.app,"package_manager"):
+            self.app.package_manager.interactive()
+        else:
+            self.placeholder("Package Manager")
+
+    def private_server(self):
+        if self.app and hasattr(self.app,"private_server_manager"):
+            self.app.private_server_manager.interactive()
+        else:
+            self.placeholder("Private Server Manager")
+
+    def start_runtime(self):
         if self.app:
             self.app.start()
-        input("Runtime started. Press Enter...")
+        input("\nRuntime started. Press Enter...")
 
-    def _stop(self):
-        if self.app:
-            self.app.stop()
-        input("Runtime stopped. Press Enter...")
-
-    def _dashboard(self):
-        if self.app and hasattr(self.app, "dashboard"):
+    def dashboard(self):
+        if self.app and hasattr(self.app,"dashboard"):
             self.app.dashboard.render()
         input("\nPress Enter to return...")
 
-    def _package_manager(self):
-        print("\nPackage Manager will be implemented in a later phase.")
-        input("\nPress Enter to return...")
-
-    def _about(self):
+    def about(self):
         print("\nCARRERA-HUB v2")
-        print("Production Auto Rejoin System")
         print("Android 10 + Termux + Root")
-        input("\nPress Enter to return...")
+        print("Multi-instance Roblox Auto Rejoin")
+        input("\nPress Enter...")
 
-    def _exit(self):
-        self.running = False
+    def placeholder(self,name):
+        print(f"\n{name} belum diimplementasikan.")
+        input("\nPress Enter...")
+        
