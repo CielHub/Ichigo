@@ -1,7 +1,8 @@
+
 """
 launcher.py
 CARRERA-HUB v2
-Phase 3.2 - Launcher Engine (Foundation)
+Enhanced Launcher Engine
 """
 
 from __future__ import annotations
@@ -10,13 +11,14 @@ import threading
 import time
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional
+from typing import List
 
 
 class LaunchState(Enum):
     IDLE=auto()
-    BUILDING_INTENT=auto()
+    PREPARING=auto()
     LAUNCHING=auto()
+    JOINING_PRIVATE_SERVER=auto()
     VERIFYING=auto()
     SUCCESS=auto()
     FAILED=auto()
@@ -32,6 +34,12 @@ class LaunchResult:
 
 
 class LauncherEngine:
+    """
+    Launches only packages selected by PackageManager/PackageRegistry.
+
+    Flow:
+    Registry -> Launch -> PrivateServer -> Verify
+    """
 
     def __init__(
         self,
@@ -40,92 +48,82 @@ class LauncherEngine:
         android_service,
         logger,
         package_registry,
+        private_server_manager=None,
+        verification_engine=None,
     ):
         self.config=config_manager
         self.state=state_manager
         self.android=android_service
         self.logger=logger
         self.registry=package_registry
+        self.ps_manager=private_server_manager
+        self.verifier=verification_engine
         self._lock=threading.RLock()
 
-    def launch(self, package_name:str)->LaunchResult:
+    def launch_package(self, package:str)->LaunchResult:
         start=time.time()
 
-        with self._lock:
-            self.logger.launch_event(package_name)
+        try:
+            self.logger.launch_event(package)
+        except Exception:
+            pass
 
-            profile=self.registry.get(package_name)
-            if profile is None:
-                return LaunchResult(
-                    package_name,
-                    False,
-                    LaunchState.FAILED,
-                    "Package not registered",
-                    time.time()-start,
-                )
+        result=self.android.intent.launch_package(package)
 
-            try:
-                self.state.update_state(package_name, self.state.get_package(package_name).state.LAUNCHING)
-            except Exception:
-                pass
-
-            try:
-                result=self.android.intent.launch_package(package_name)
-            except Exception as exc:
-                return LaunchResult(
-                    package_name,
-                    False,
-                    LaunchState.FAILED,
-                    str(exc),
-                    time.time()-start,
-                )
-
-            if not result.success:
-                self.logger.error(f"Launch failed: {package_name}")
-                return LaunchResult(
-                    package_name,
-                    False,
-                    LaunchState.FAILED,
-                    result.stderr,
-                    time.time()-start,
-                )
-
-            delay=self.config.get("launcher","delay",default=5)
-            time.sleep(delay)
-
-            verify=self.verify(package_name)
-
-            if verify:
-                try:
-                    self.state.record_launch(package_name)
-                except Exception:
-                    pass
-
-                return LaunchResult(
-                    package_name,
-                    True,
-                    LaunchState.SUCCESS,
-                    "Launch successful",
-                    time.time()-start,
-                )
-
+        if not result.success:
             return LaunchResult(
-                package_name,
-                False,
-                LaunchState.FAILED,
-                "Verification failed",
-                time.time()-start,
+                package,False,LaunchState.FAILED,
+                result.stderr,time.time()-start
             )
 
-    def verify(self,package_name:str)->bool:
-        try:
-            result=self.android.process.pidof(package_name)
-            return result.success and bool(result.stdout)
-        except Exception:
-            return False
-
-    def relaunch(self,package_name:str)->LaunchResult:
-        self.android.process.force_stop(package_name)
-        delay=self.config.get("recovery","delay",default=10)
+        delay=self.config.get("launcher","startup_delay",default=5)
         time.sleep(delay)
-        return self.launch(package_name)
+
+        if self.ps_manager:
+            profile=self.ps_manager.profile
+            if profile.valid and profile.deep_link:
+                self.android.intent.open_uri(profile.deep_link)
+
+        if self.verifier:
+            verify=self.verifier.verify(package)
+            if not verify.success:
+                return LaunchResult(
+                    package,False,LaunchState.FAILED,
+                    "Verification failed",
+                    time.time()-start
+                )
+
+        try:
+            self.state.record_launch(package)
+        except Exception:
+            pass
+
+        return LaunchResult(
+            package,True,LaunchState.SUCCESS,
+            "Launch completed",
+            time.time()-start
+        )
+
+    def launch_selected(self)->List[LaunchResult]:
+        results=[]
+
+        for profile in self.registry.enabled():
+            results.append(
+                self.launch_package(profile.package_name)
+            )
+
+        return results
+
+    def relaunch_package(self,package:str)->LaunchResult:
+        self.android.process.force_stop(package)
+
+        delay=self.config.get(
+            "recovery",
+            "delay",
+            default=10
+        )
+
+        time.sleep(delay)
+
+        return self.launch_package(package)
+        
