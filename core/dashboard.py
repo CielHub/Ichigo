@@ -2,7 +2,7 @@
 """
 dashboard.py
 CARRERA-HUB v2
-Enhanced Color Dashboard
+Advanced Dashboard (Foundation)
 """
 
 from __future__ import annotations
@@ -11,26 +11,29 @@ import os
 import shutil
 import time
 
-class C:
-    RESET="\033[0m"
-    RED="\033[91m"
-    GREEN="\033[92m"
-    YELLOW="\033[93m"
-    BLUE="\033[94m"
-    CYAN="\033[96m"
-    MAGENTA="\033[95m"
-    WHITE="\033[97m"
-    BOLD="\033[1m"
+CSI="\033["
 
-def color_status(state:str):
-    s=state.upper()
-    if s in ("ONLINE","SUCCESS","HEALTHY"):
-        return C.GREEN+s+C.RESET
-    if s in ("RECOVERY","RECOVERING","WARNING"):
-        return C.YELLOW+s+C.RESET
-    if s in ("OFFLINE","FAILED","ERROR"):
-        return C.RED+s+C.RESET
-    return C.WHITE+s+C.RESET
+class Color:
+    RESET=CSI+"0m"
+    BOLD=CSI+"1m"
+    CYAN=CSI+"96m"
+    BLUE=CSI+"94m"
+    GREEN=CSI+"92m"
+    YELLOW=CSI+"93m"
+    RED=CSI+"91m"
+    MAGENTA=CSI+"95m"
+    WHITE=CSI+"97m"
+
+def cstate(s):
+    s=str(s).upper()
+    if s in ("ONLINE","RUNNING","SUCCESS","HEALTHY"):
+        return Color.GREEN+s+Color.RESET
+    if s in ("RECOVERING","WARNING","VERIFYING","JOINING"):
+        return Color.YELLOW+s+Color.RESET
+    if s in ("OFFLINE","FAILED","ERROR","CRITICAL"):
+        return Color.RED+s+Color.RESET
+    return Color.WHITE+s+Color.RESET
+
 
 class DashboardEngine:
 
@@ -40,68 +43,71 @@ class DashboardEngine:
         self.logger=logger
         self.scheduler=recovery_scheduler
 
+    def _w(self):
+        return max(100, shutil.get_terminal_size((100,30)).columns)
+
     def clear(self):
         os.system("clear")
 
-    def line(self,w):
-        return "═"*w
+    def hr(self,ch="═"):
+        return ch*(self._w()-2)
 
-    def header(self):
-        width=max(70,shutil.get_terminal_size((100,30)).columns)
-        print(C.CYAN+"╔"+self.line(width-2)+"╗"+C.RESET)
-        title=" CARRERA-HUB v2.0 "
-        print(C.CYAN+"║"+C.BOLD+title.center(width-2)+C.RESET+C.CYAN+"║"+C.RESET)
-        print(C.CYAN+"╚"+self.line(width-2)+"╝"+C.RESET)
+    def render_header(self):
+        print(Color.CYAN+"╔"+self.hr()+"╗"+Color.RESET)
+        print(Color.CYAN+"║"+Color.BOLD+" CARRERA-HUB v2 ".center(self._w()-2)+Color.RESET+Color.CYAN+"║"+Color.RESET)
+        print(Color.CYAN+"╠"+self.hr("═")+"╣"+Color.RESET)
 
-    def runtime_panel(self):
-        snap=self.state.snapshot()
-
-        print(C.BLUE+"┌──────────── Runtime ────────────┐"+C.RESET)
-        print(f" {C.BOLD}Updated{C.RESET}      : {time.strftime('%H:%M:%S')}")
-        print(f" {C.BOLD}Packages{C.RESET}     : {len(snap['packages'])}")
-        print(f" {C.BOLD}Recovery Q{C.RESET}   : {self.scheduler.queue_size()}")
-        print(f" {C.BOLD}Running Rec{C.RESET}  : {len(self.scheduler.running_packages())}")
-        print(C.BLUE+"└─────────────────────────────────┘"+C.RESET)
-
-    def package_table(self):
-        snap=self.state.snapshot()
-
+    def render_runtime(self):
+        runtime=self.state.snapshot()
+        print(f"{Color.BOLD}Runtime{Color.RESET}")
+        print(f" Time            : {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f" Packages        : {len(runtime.get('packages',{}))}")
+        print(f" Recovery Queue  : {self.scheduler.queue_size()}")
+        print(f" Running Recovery: {len(self.scheduler.running_packages())}")
         print()
-        print(C.MAGENTA+"┌────┬──────────────────────────┬────────────┬─────────┬────────┐"+C.RESET)
-        print("│ ID │ Package                  │ Status     │ Error   │ PID    │")
-        print(C.MAGENTA+"├────┼──────────────────────────┼────────────┼─────────┼────────┤"+C.RESET)
 
-        for idx,(pkg,ctx) in enumerate(snap["packages"].items(),1):
-            state=getattr(getattr(ctx,"state",None),"name","UNKNOWN")
-            err=getattr(ctx,"current_error","-") or "-"
-            pid=str(getattr(ctx,"pid","-"))
-            print(
-                f"│ {idx:<2} │ "
-                f"{pkg[:24]:<24} │ "
-                f"{color_status(state):<21}"
-                f"│ {str(err):<7} │ "
-                f"{pid[:6]:<6} │"
-            )
+    def render_packages(self):
+        snap=self.state.snapshot().get("packages",{})
+        print(Color.MAGENTA+"┌────┬────────────────────────────┬────────────┬────────┬──────────┐"+Color.RESET)
+        print("│ ID │ Package                    │ Status     │ Error  │ Uptime   │")
+        print(Color.MAGENTA+"├────┼────────────────────────────┼────────────┼────────┼──────────┤"+Color.RESET)
 
-        print(C.MAGENTA+"└────┴──────────────────────────┴────────────┴─────────┴────────┘"+C.RESET)
+        if not snap:
+            print("│ -- │ No package loaded.                                              │")
+        else:
+            for i,(pkg,obj) in enumerate(snap.items(),1):
+                st=getattr(getattr(obj,"state",None),"name","UNKNOWN")
+                err=str(getattr(obj,"current_error","-") or "-")
+                up=str(getattr(obj,"uptime","-"))
+                print(f"│ {i:<2} │ {pkg[:26]:<26} │ {cstate(st):<20}│ {err[:6]:<6} │ {up[:8]:<8} │")
 
-    def footer(self):
+        print(Color.MAGENTA+"└────┴────────────────────────────┴────────────┴────────┴──────────┘"+Color.RESET)
+
+    def render_scheduler(self):
         print()
-        print(C.CYAN+"F1"+C.RESET+" Dashboard   "
-              +C.GREEN+"F2"+C.RESET+" Start   "
-              +C.RED+"F3"+C.RESET+" Stop   "
-              +C.YELLOW+"F4"+C.RESET+" Refresh")
+        print(Color.BLUE+"Scheduler"+Color.RESET)
+        print(f" Queue Size : {self.scheduler.queue_size()}")
+        print(f" Running    : {', '.join(self.scheduler.running_packages()) or '-'}")
+
+    def render_footer(self):
+        print()
+        print(Color.CYAN+"────────────────────────────────────────────────────────────────────────────"+Color.RESET)
+        print(Color.GREEN+"F1"+Color.RESET+" Dashboard   "
+              +Color.YELLOW+"F2"+Color.RESET+" Refresh   "
+              +Color.BLUE+"F3"+Color.RESET+" Menu   "
+              +Color.RED+"F4"+Color.RESET+" Exit")
 
     def render(self):
         self.clear()
-        self.header()
-        self.runtime_panel()
-        self.package_table()
-        self.footer()
+        self.render_header()
+        self.render_runtime()
+        self.render_packages()
+        self.render_scheduler()
+        self.render_footer()
 
     def loop(self):
-        rate=self.config.get("dashboard","refresh_rate",default=1)
+        interval=self.config.get("dashboard","refresh_rate",default=1)
         while True:
             self.render()
-            time.sleep(rate)
-            
+            time.sleep(interval)
+        
