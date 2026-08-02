@@ -2,7 +2,7 @@
 """
 dashboard.py
 CARRERA-HUB v2
-Phase 3.5 - Dashboard Engine (Foundation)
+Enhanced Color Dashboard
 """
 
 from __future__ import annotations
@@ -10,100 +10,98 @@ from __future__ import annotations
 import os
 import shutil
 import time
-from dataclasses import dataclass
-from typing import List
 
+class C:
+    RESET="\033[0m"
+    RED="\033[91m"
+    GREEN="\033[92m"
+    YELLOW="\033[93m"
+    BLUE="\033[94m"
+    CYAN="\033[96m"
+    MAGENTA="\033[95m"
+    WHITE="\033[97m"
+    BOLD="\033[1m"
 
-@dataclass
-class DashboardConfig:
-    title:str="CARRERA-HUB v2"
-    refresh_rate:float=1.0
-
-
-class BoxRenderer:
-
-    @staticmethod
-    def box(title:str, lines:List[str], width:int)->str:
-        top="┌"+"─"*(width-2)+"┐"
-        head=f"│ {title}".ljust(width-1)+"│"
-        sep="├"+"─"*(width-2)+"┤"
-        body=[]
-        for line in lines:
-            body.append(("│ "+line).ljust(width-1)+"│")
-        bot="└"+"─"*(width-2)+"┘"
-        return "\n".join([top,head,sep,*body,bot])
-
-
-class TableRenderer:
-
-    @staticmethod
-    def packages(rows,width):
-        headers=["ID","Package","Status","PID","Health","Error","Uptime"]
-        col=[4,24,12,8,10,8,10]
-        def fmt(vals):
-            out="│"
-            for v,w in zip(vals,col):
-                out+=f" {str(v)[:w-1]:<{w-1}}│"
-            return out
-        line="├"+"┼".join("─"*c for c in col)+"┤"
-        top="┌"+"┬".join("─"*c for c in col)+"┐"
-        bot="└"+"┴".join("─"*c for c in col)+"┘"
-        txt=[top,fmt(headers),line]
-        for r in rows:
-            txt.append(fmt(r))
-        txt.append(bot)
-        return "\n".join(txt)
-
+def color_status(state:str):
+    s=state.upper()
+    if s in ("ONLINE","SUCCESS","HEALTHY"):
+        return C.GREEN+s+C.RESET
+    if s in ("RECOVERY","RECOVERING","WARNING"):
+        return C.YELLOW+s+C.RESET
+    if s in ("OFFLINE","FAILED","ERROR"):
+        return C.RED+s+C.RESET
+    return C.WHITE+s+C.RESET
 
 class DashboardEngine:
 
-    def __init__(self,config,state,logger,scheduler):
+    def __init__(self,config,state,logger,recovery_scheduler):
         self.config=config
         self.state=state
         self.logger=logger
-        self.scheduler=scheduler
-        self.cfg=DashboardConfig()
+        self.scheduler=recovery_scheduler
 
     def clear(self):
         os.system("clear")
 
-    def _runtime_box(self):
-        snap=self.state.snapshot()
-        lines=[
-            f"Runtime    : {snap['runtime_state']}",
-            f"Packages   : {len(snap['packages'])}",
-            f"RecoveryQ  : {self.scheduler.queue_size()}",
-            f"Terminal   : {shutil.get_terminal_size((80,24)).columns} cols",
-            f"Updated    : {time.strftime('%H:%M:%S')}"
-        ]
-        return BoxRenderer.box(self.cfg.title,lines,70)
+    def line(self,w):
+        return "═"*w
 
-    def _package_table(self):
+    def header(self):
+        width=max(70,shutil.get_terminal_size((100,30)).columns)
+        print(C.CYAN+"╔"+self.line(width-2)+"╗"+C.RESET)
+        title=" CARRERA-HUB v2.0 "
+        print(C.CYAN+"║"+C.BOLD+title.center(width-2)+C.RESET+C.CYAN+"║"+C.RESET)
+        print(C.CYAN+"╚"+self.line(width-2)+"╝"+C.RESET)
+
+    def runtime_panel(self):
         snap=self.state.snapshot()
-        rows=[]
-        i=1
-        for name,ctx in snap["packages"].items():
-            metrics=ctx.metrics if hasattr(ctx,"metrics") else None
-            up="-"
-            rows.append([
-                i,
-                name,
-                getattr(ctx.state,"name","?"),
-                ctx.pid if getattr(ctx,"pid",None) else "-",
-                getattr(ctx.health,"name","?"),
-                ctx.current_error if getattr(ctx,"current_error",None) else "-",
-                up
-            ])
-            i+=1
-        return TableRenderer.packages(rows,120)
+
+        print(C.BLUE+"┌──────────── Runtime ────────────┐"+C.RESET)
+        print(f" {C.BOLD}Updated{C.RESET}      : {time.strftime('%H:%M:%S')}")
+        print(f" {C.BOLD}Packages{C.RESET}     : {len(snap['packages'])}")
+        print(f" {C.BOLD}Recovery Q{C.RESET}   : {self.scheduler.queue_size()}")
+        print(f" {C.BOLD}Running Rec{C.RESET}  : {len(self.scheduler.running_packages())}")
+        print(C.BLUE+"└─────────────────────────────────┘"+C.RESET)
+
+    def package_table(self):
+        snap=self.state.snapshot()
+
+        print()
+        print(C.MAGENTA+"┌────┬──────────────────────────┬────────────┬─────────┬────────┐"+C.RESET)
+        print("│ ID │ Package                  │ Status     │ Error   │ PID    │")
+        print(C.MAGENTA+"├────┼──────────────────────────┼────────────┼─────────┼────────┤"+C.RESET)
+
+        for idx,(pkg,ctx) in enumerate(snap["packages"].items(),1):
+            state=getattr(getattr(ctx,"state",None),"name","UNKNOWN")
+            err=getattr(ctx,"current_error","-") or "-"
+            pid=str(getattr(ctx,"pid","-"))
+            print(
+                f"│ {idx:<2} │ "
+                f"{pkg[:24]:<24} │ "
+                f"{color_status(state):<21}"
+                f"│ {str(err):<7} │ "
+                f"{pid[:6]:<6} │"
+            )
+
+        print(C.MAGENTA+"└────┴──────────────────────────┴────────────┴─────────┴────────┘"+C.RESET)
+
+    def footer(self):
+        print()
+        print(C.CYAN+"F1"+C.RESET+" Dashboard   "
+              +C.GREEN+"F2"+C.RESET+" Start   "
+              +C.RED+"F3"+C.RESET+" Stop   "
+              +C.YELLOW+"F4"+C.RESET+" Refresh")
 
     def render(self):
         self.clear()
-        print(self._runtime_box())
-        print()
-        print(self._package_table())
+        self.header()
+        self.runtime_panel()
+        self.package_table()
+        self.footer()
 
     def loop(self):
+        rate=self.config.get("dashboard","refresh_rate",default=1)
         while True:
             self.render()
-            time.sleep(self.cfg.refresh_rate)
+            time.sleep(rate)
+            
